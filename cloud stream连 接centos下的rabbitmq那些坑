@@ -1,0 +1,131 @@
+## 注意：cloud stream连 接centos下的rabbitmq那些坑
+
+第一次使用cloud Stream连接docker中的rabbitmq时遇到了许多大坑，很多坑其实和配置有很大关系。比如window环境下和linux的docker环境下的MQ配置，还有stream依赖引入报错等等。
+
+首先，创建一个Stream模块作为生产者，编辑其pom.xml文件：
+
+其中的一些坑这里说一下，由于maven问题，各个依赖都需要加上对应的版本号，否则会报错，这是第一个坑。
+
+然后，由于项目是boot + cloud，因此版本对应很重要，这是第二个坑。以下是我的pom.xml文件。
+
+第三个坑，也就是困扰我一下午的一个问题，我排查了多次，发现有一个异常只要我引入stream依赖就报output的错，为解决这个问题，我花费了一下午，但是最终也没有得到结果…不过最后它在我各种修改重启后消失了…原因我至今不清楚
+
+<dependencies>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-web</artifactId>
+        <version>2.2.2.RELEASE</version>
+    </dependency>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-actuator</artifactId>
+        <version>2.2.2.RELEASE</version>
+    </dependency>
+    <dependency>
+        <groupId>org.springframework.cloud</groupId>
+        <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+        <version>2.2.1.RELEASE</version>
+    </dependency>
+    <dependency>
+        <groupId>org.springframework.cloud</groupId>
+        <artifactId>spring-cloud-starter-stream-rabbit</artifactId>
+        <version>2.2.1.RELEASE</version>
+    </dependency>
+    <!--基础配置-->
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-devtools</artifactId>
+        <scope>runtime</scope>
+        <optional>true</optional>
+    </dependency>
+    <dependency>
+        <groupId>org.projectlombok</groupId>
+        <artifactId>lombok</artifactId>
+        <optional>true</optional>
+    </dependency>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-test</artifactId>
+        <scope>test</scope>
+    </dependency>
+</dependencies>代码片
+
+
+
+然后是application.yml文件，这里坑也很多，由于我使用的是centos下的docker中的rabbitmq，因此需要在docker中启动先启动容器，并且开放15672，5672两个端口。
+
+注意，第一个大坑来了，这两个端口，15672是web端访问可视化界面时使用的端口，5672是后端连接使用的接口，使用不当，可能会导致报错或者IDEA长时间连接不上MQ。
+
+其次，还有个小坑，外网连接Linux需要开放防火墙。
+
+第三个坑，由于是初学者，对yml文件的配置应该大都不熟悉，window下的rabbitmq配置和docker中的rabbitmq配置也不一样，写错同样会导致报错。
+如下是window中的配置：
+
+server:
+  port: 8801
+
+spring:
+  application:
+    name: cloud-stream-provider
+  cloud:
+    stream:
+      binders: # 在此处配置要绑定的rabbitmq的服务信息；
+        defaultRabbit: # 表示定义的名称，用于于binding整合
+          type: rabbit # 消息组件类型
+          environment: # 设置rabbitmq的相关的环境配置
+            spring:
+              rabbitmq:
+                host: localhost
+                port: 5672
+                username: guest
+                password: guest
+      bindings: # 服务的整合处理
+        output: # 这个名字是一个通道的名称
+          destination: studyExchange # 表示要使用的Exchange名称定义
+          content-type: application/json # 设置消息类型，本次为json，文本则设置“text/plain”
+          binder: {defaultRabbit} # 设置要绑定的消息服务的具体设置
+
+eureka:
+  client: # 客户端进行Eureka注册的配置
+    service-url:
+      defaultZone: http://localhost:7001/eureka
+  instance:
+    lease-renewal-interval-in-seconds: 2 # 设置心跳的时间间隔（默认是30秒）
+    lease-expiration-duration-in-seconds: 5 # 如果现在超过了5秒的间隔（默认是90秒）
+    instance-id: send-8801.com  # 在信息列表时显示主机名称
+    prefer-ip-address: true     # 访问的路径变为IP地址
+    
+    
+    ### docker中的配置（rabbitmq写在spring下）：
+    
+    server:
+  port: 8801
+
+spring:
+  rabbitmq:
+    host: Linux端口号
+    port: 5672
+    username: guest
+    password: guest
+  application:
+    name: cloud-stream-provider
+  cloud:
+    stream:
+      binders: # 在此处配置要绑定的rabbitmq的服务信息；
+        defaultRabbit: # 表示定义的名称，用于于binding整合
+          type: rabbit # 消息组件类型
+      bindings: # 服务的整合处理
+        output: # 这个名字是一个通道的名称
+          destination: studyExchange # 表示要使用的Exchange名称定义
+          content-type: application/json # 设置消息类型，本次为json，文本则设置“text/plain”
+          binder: {defaultRabbit} # 设置要绑定的消息服务的具体设置
+
+eureka:
+  client: # 客户端进行Eureka注册的配置
+    service-url:
+      defaultZone: http://localhost:7001/eureka
+  instance:
+    lease-renewal-interval-in-seconds: 2 # 设置心跳的时间间隔（默认是30秒）
+    lease-expiration-duration-in-seconds: 5 # 如果现在超过了5秒的间隔（默认是90秒）
+    instance-id: send-8801.com  # 在信息列表时显示主机名称
+    prefer-ip-address: true     # 访问的路径变为IP地址
